@@ -7,10 +7,37 @@ from PIL import ImageOps
 
 
 def getRMatrix(alpha, beta, gamma):
-    Rx = np.array([[1, 0, 0], [0, cos(alpha), sin(alpha)], [0, -sin(alpha), cos(alpha)]])
-    Ry = np.array([[cos(beta), 0, sin(beta)], [0, 1, 0], [-sin(beta), 0, cos(beta)]])
-    Rz = np.array([[cos(gamma), sin(gamma), 0], [-sin(gamma), cos(gamma), 0], [0, 0, 1]])
+    Rx = np.array([[1, 0, 0],
+                   [0, cos(alpha), sin(alpha)],
+                   [0, -sin(alpha), cos(alpha)]])
+    Ry = np.array([[cos(beta), 0, sin(beta)],
+                   [0, 1, 0],
+                   [-sin(beta), 0, cos(beta)]])
+    Rz = np.array([[cos(gamma), sin(gamma), 0],
+                   [-sin(gamma), cos(gamma), 0],
+                   [0, 0, 1]])
     R = np.dot(Rx, np.dot(Ry, Rz))
+    #print(f"Input R type from getRMatrix(): {type(R)}, shape: {np.array(R).shape}")
+    return R
+
+
+def getCoefficientsQuaternion(teta, ux, uy, uz):
+    halfSin = sin(teta/2)
+    return [cos(teta/2), halfSin * ux, halfSin * uy, halfSin * uz]
+
+
+def getRMatrixFromQuaternion(teta, ux, uy, uz):
+    coefficients = getCoefficientsQuaternion(teta, ux, uy, uz)
+    a = coefficients[0]
+    b = coefficients[1]
+    c = coefficients[2]
+    d = coefficients[3]
+
+    R = np.array([
+        [a**2 + b**2 - c**2 - d**2, 2*(b*c - a*d), 2*b*d + 2*a*c],
+        [2*(b*c + a*d), a**2 - b**2 + c**2 - d**2, 2*c*d - 2*a*b],
+        [2*(b*d - a*c), 2*(c*d + a*b), a**2 - b**2 - c**2 + d**2]
+    ])
     return R
 
 
@@ -22,12 +49,13 @@ def rotate_and_shift(vertex, scale, R, shiftByX, shiftByY, shiftByZ):
     vertex[2] = new_coord[2]
 
 
-def parse_obj(file_path, scale, alpha, beta, gamma, shiftByX, shiftByY, shiftByZ):
+def parse_obj(file_path, scale, alpha, beta, gamma, shiftByX, shiftByY, shiftByZ, quaternion, teta, ux, uy, uz):
     vertices = []
     faces = []
     textures = []
     texture_coords = []
-    R = getRMatrix(alpha, beta, gamma)
+
+    R = getRMatrixFromQuaternion(teta, ux, uy, uz) if quaternion else getRMatrix(alpha, beta, gamma)
 
     with open(file_path, 'r') as file:
         for line in file:
@@ -65,8 +93,8 @@ def parse_obj(file_path, scale, alpha, beta, gamma, shiftByX, shiftByY, shiftByZ
 
 
 def get_image_size(file_path):
-    with Image.open(file_path) as img:
-        width, height = img.size
+    with Image.open(file_path) as image:
+        width, height = image.size
         return width, height
 
 
@@ -96,12 +124,14 @@ def drawPicture(img_mat,
                 z_buffer,
                 ax, ay, scale,
                 alpha, beta, gamma,
-                shiftByX, shiftByY, shiftByZ):
+                shiftByX, shiftByY, shiftByZ,
+                quaternion, teta, ux, uy, uz):
 
     widthTexture, heightTexture = get_image_size(linkToJPG)
     vertices, edges, textures, textures_coords = parse_obj(linkToOBJ, scale,
                                                            alpha, beta, gamma,
-                                                           shiftByX, shiftByY, shiftByZ)
+                                                           shiftByX, shiftByY, shiftByZ,
+                                                           quaternion, teta, ux, uy, uz)
 
     def printTriangle(image,
                       x0nch, y0nch, z0,
@@ -144,9 +174,6 @@ def drawPicture(img_mat,
                         if(z_ < z_buffer[i, j]):
                             z_buffer[i, j] = z_
                             image[i, j] = np.array(rgb_img.getpixel((coordTexture1, coordTexture2))) * -I
-
-
-
 
     def getArrayNormal():
         vertexToNeighborNormal = np.zeros((len(vertices), 3), dtype=np.float32)
@@ -216,13 +243,11 @@ def drawPicture(img_mat,
                                   rgb_img
                                   )
 
-
-
     return img_mat
 
 
-width = 2000
-height = 2000
+width = 50
+height = 1000
 z_buffer1 = np.full((height, width), np.inf)
 img_mat1 = np.full((height, width, 3), (255, 255, 255), dtype=np.uint8)
 
@@ -244,7 +269,8 @@ tmpImg = drawPicture(img_mat1,
                      ax1, ay1,
                      bunnyScale,
                      alphaBunny, betaBunny, gammaBunny,
-                     shiftByXForBunny, shiftByYForBunny, shiftByZForBunny)
+                     shiftByXForBunny, shiftByYForBunny, shiftByZForBunny,
+                     True, 90 * math.pi / 180, 1, 0, 0)
 
 
 linkToFrogJPG = 'C:\\Users\\DNS\\PycharmProjects\\-ComputerGraphicsLabs\\frog_diffuse.jpg'
@@ -255,16 +281,17 @@ betaFrog = 0 * math.pi / 180
 gammaFrog = 0 * math.pi / 180
 shiftByXForFrog = 1
 shiftByYForFrog = 1
-shiftByZForFrog = -100
+shiftByZForFrog = 100
 finallyImg = drawPicture(tmpImg,
                          linkToFrogJPG, linkToFrogOBJ,
                          z_buffer1,
                          ax1, ay1,
                          scaleFrog,
                          alphaFrog, betaFrog, gammaFrog,
-                         shiftByXForFrog, shiftByYForFrog, shiftByZForFrog)
+                         shiftByXForFrog, shiftByYForFrog, shiftByZForFrog,
+                         False, 0, 0, 0, 0)
 
 
 img = Image.fromarray(finallyImg, mode='RGB')
 img = ImageOps.flip(img)
-img.save("testDrawPictureByFunctionWithMovingFrog.png")
+img.save("test1.png")
